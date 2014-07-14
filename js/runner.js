@@ -1,10 +1,11 @@
-function jsrunner_notify(post_id,ajax_url,message)
+function jsrunner_notify(post_id,ajax_url,notify_type,notify_msg)
 {
 	jQuery.post(ajax_url,
 	{
 		action : 'jsrunner',
 		post : post_id,
-		notification : message,
+		notification : notify_type,
+		message : notify_msg,
 	},
 	function( response )
 	{}
@@ -33,10 +34,11 @@ function jsrunner_hint(post_id)
 	  jQuery('#hintbtn'+post_id).removeClass('pull-right').addClass('pull-left').children('i').removeClass('fa-angle-double-left').addClass('fa-angle-double-right');
 	}
 }
-function jsrunner_format_results(testcases)
+function jsrunner_format_results(testcases,success_message,post_id)
 {
 	var successes=0;
 	var first_mistake=-1;
+	var display={};
 	for (var i = 0; i < testcases.length; ++i)
 	{
 		if (JSON.stringify(testcases[i].result)==JSON.stringify(testcases[i].output))
@@ -49,18 +51,32 @@ function jsrunner_format_results(testcases)
 	if (first_mistake<0)
 	{
 		retVal+='<div class="alert alert-success">';
-		retVal+='Great job !!!';
+		retVal+=success_message;
+		if (post_id>0)
+			retVal+='<p><button class="btn btn-info btn-lg pull-right" data-toggle="modal" data-target="#modal'+post_id+'"><i class="fa fa-check"></i> Submit Your Solution</button></p>';
 		retVal+='</div>';
 	}
 	else
 	{
+		if (testcases[first_mistake]['display']!=undefined)
+		{
+			display.input=testcases[first_mistake].display(testcases[first_mistake].input);
+			display.output=testcases[first_mistake].display(testcases[first_mistake].output);
+			display.result=testcases[first_mistake].display(testcases[first_mistake].result);
+		}
+		else
+		{
+			display.input=JSON.stringify(testcases[first_mistake].input);
+			display.output=JSON.stringify(testcases[first_mistake].output);
+			display.result=JSON.stringify(testcases[first_mistake].result);
+		}
 		retVal+='<div class="alert alert-warning">';
-		retVal+= "[Test #"+(first_mistake+1)+"] Input was '"+JSON.stringify(testcases[first_mistake].input)+"', Expected output is '"+JSON.stringify(testcases[first_mistake].output)+"', But was '"+JSON.stringify(testcases[first_mistake].result)+"'";
+		retVal+= "[Test #"+(first_mistake+1)+"] Input was '"+display.input+"', Expected output is '"+display.output+"', But was '"+display.result+"'";
 		retVal+='</div>';
 	}
 	return retVal;
 }
-function jsrunner_init(post_id,ajax_url)
+function jsrunner_init(post_id,ajax_url,show_submit)
 {
 	var obj_Editor = ace.edit("edit"+post_id);
 	obj_Editor.setTheme("ace/theme/textmate");
@@ -69,15 +85,29 @@ function jsrunner_init(post_id,ajax_url)
 	var obj_Error=jQuery('#error'+post_id);
 	var obj_RunButton=jQuery('#run'+post_id);
 	var obj_TestCases=jQuery('#testcases'+post_id);
+	var obj_ApplyButton=jQuery('#apply'+post_id);
 	
-	jsrunner_notify(post_id,ajax_url,'view');
+	jsrunner_notify(post_id,ajax_url,'view','');
+	
+	var success_message=obj_Result.html();
+	obj_Result.html('');
 	
 	obj_TestCases.hide();
-	var testcases=jQuery.map(obj_TestCases.children(),function (obj) {return JSON.parse(jQuery(obj).html());});
+	var testcases=jQuery.map(obj_TestCases.children(),function (obj) {
+		return JSON.parse(jQuery(obj).html(),function (k,v) {
+				if (!isNaN(parseFloat(v)) && isFinite(v)) 
+					return v;
+				if ((k!='') && (window[k] != undefined))
+					return window[k];
+				if ((v.toString().indexOf('jsrunner_')==0) && (window[v.toString()] != undefined))
+					return window[v.toString()];
+				return v;
+		});
+	});
 	
 	obj_RunButton.on('click',function()
 	{
-		jsrunner_notify(post_id,ajax_url,'attempt');
+		jsrunner_notify(post_id,ajax_url,'attempt','');
 		var code=obj_Editor.getSession().getValue();
 		code='function run(input) {"use strict";var output;'+code+'return output;}'
 		obj_Error.html('');
@@ -103,9 +133,18 @@ function jsrunner_init(post_id,ajax_url)
 		}
 		if (!obj_Error.hasClass('alert-danger'))
 		{
-			obj_Result.html(jsrunner_format_results(testcases));
+			if (show_submit)
+				obj_Result.html(jsrunner_format_results(testcases,success_message,post_id));
+			else
+				obj_Result.html(jsrunner_format_results(testcases,success_message,0));
 			if (jsrunner_checkall(testcases))
-				jsrunner_notify(post_id,ajax_url,'solved');
+				jsrunner_notify(post_id,ajax_url,'solved',code);
 		}
+	});
+	
+	obj_ApplyButton.on('click',function()
+	{
+		var application_details= ''+jQuery('#linkedin'+post_id).val()+"\n"+jQuery('#notes'+post_id).val();
+		jsrunner_notify(post_id,ajax_url,'apply',application_details);
 	});
 }
